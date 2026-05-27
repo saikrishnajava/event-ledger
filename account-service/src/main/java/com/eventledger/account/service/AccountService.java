@@ -6,6 +6,7 @@ import com.eventledger.account.repository.AccountRepository;
 import com.eventledger.account.repository.TransactionRepository;
 import com.eventledger.dto.AccountResponse;
 import com.eventledger.dto.TransactionRequest;
+import jakarta.persistence.OptimisticLockException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -19,6 +20,8 @@ import java.util.stream.Collectors;
 public class AccountService {
 
     private static final Logger log = LoggerFactory.getLogger(AccountService.class);
+    private static final String TXN_EVENT_ID_IDX = "IDX_TXN_EVENT_ID";
+    private static final int MAX_RETRIES = 3;
 
     private final AccountRepository accountRepository;
     private final TransactionRepository transactionRepository;
@@ -28,8 +31,23 @@ public class AccountService {
         this.transactionRepository = transactionRepository;
     }
 
-    @Transactional
     public AccountResponse applyTransaction(TransactionRequest request) {
+        for (int attempt = 0; attempt < MAX_RETRIES; attempt++) {
+            try {
+                return doApplyTransaction(request);
+            } catch (OptimisticLockException e) {
+                if (attempt == MAX_RETRIES - 1) {
+                    log.error("Optimistic lock retry exhausted for accountId={}", request.getAccountId());
+                    throw new AccountConflictException("Account updated concurrently, please retry", e);
+                }
+                log.warn("Optimistic lock conflict, retrying (attempt {}/{})", attempt + 1, MAX_RETRIES);
+            }
+        }
+        throw new AccountConflictException("Account updated concurrently, please retry");
+    }
+
+    @Transactional
+    protected AccountResponse doApplyTransaction(TransactionRequest request) {
         log.info("Applying transaction: eventId={}, accountId={}, type={}, amount={}",
                 request.getEventId(), request.getAccountId(), request.getType(), request.getAmount());
 
@@ -42,8 +60,15 @@ public class AccountService {
         AccountEntity account = accountRepository.findById(request.getAccountId())
                 .orElseGet(() -> {
                     log.info("Creating new account: accountId={}", request.getAccountId());
-                    return accountRepository.save(new AccountEntity(request.getAccountId()));
+                    AccountEntity newAccount = new AccountEntity(request.getAccountId());
+                    newAccount.setCurrency(request.getCurrency());
+                    return accountRepository.save(newAccount);
                 });
+
+        // Validate currency consistency
+        if (account.getCurrency() != null && !account.getCurrency().equals(request.getCurrency())) {
+            throw new CurrencyMismatchException(account.getCurrency(), request.getCurrency());
+        }
 
         TransactionEntity txn = new TransactionEntity();
         txn.setEventId(request.getEventId());
@@ -55,8 +80,12 @@ public class AccountService {
         try {
             transactionRepository.saveAndFlush(txn);
         } catch (DataIntegrityViolationException e) {
-            log.warn("Race condition detected for eventId={}, returning existing state", request.getEventId());
-            return buildAccountResponse(request.getAccountId());
+            if (e.getMessage() != null && e.getMessage().toUpperCase().contains(TXN_EVENT_ID_IDX)) {
+                log.warn("Race condition on duplicate eventId={}, returning existing state", request.getEventId());
+                return buildAccountResponse(request.getAccountId());
+            }
+            log.error("Unexpected constraint violation for eventId={}: {}", request.getEventId(), e.getMessage());
+            throw e;
         }
 
         if (request.getType() == com.eventledger.dto.EventRequest.EventType.CREDIT) {
@@ -111,6 +140,21 @@ public class AccountService {
     public static class AccountNotFoundException extends RuntimeException {
         public AccountNotFoundException(String accountId) {
             super("Account not found: " + accountId);
+        }
+    }
+
+    public static class AccountConflictException extends RuntimeException {
+        public AccountConflictException(String message) {
+            super(message);
+        }
+        public AccountConflictException(String message, Throwable cause) {
+            super(message, cause);
+        }
+    }
+
+    public static class CurrencyMismatchException extends RuntimeException {
+        public CurrencyMismatchException(String expected, String actual) {
+            super("Currency mismatch: expected " + expected + " but got " + actual);
         }
     }
 }

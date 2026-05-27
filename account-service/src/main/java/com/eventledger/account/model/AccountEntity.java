@@ -15,6 +15,12 @@ public class AccountEntity {
     @Column(nullable = false, precision = 19, scale = 4)
     private BigDecimal balance = BigDecimal.ZERO;
 
+    @Column(length = 3)
+    private String currency;
+
+    @Version
+    private Long version;
+
     @Column(nullable = false)
     private Instant createdAt;
 
@@ -43,6 +49,9 @@ public class AccountEntity {
     public void setAccountId(String accountId) { this.accountId = accountId; }
     public BigDecimal getBalance() { return balance; }
     public void setBalance(BigDecimal balance) { this.balance = balance; }
+    public String getCurrency() { return currency; }
+    public void setCurrency(String currency) { this.currency = currency; }
+    public Long getVersion() { return version; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
 

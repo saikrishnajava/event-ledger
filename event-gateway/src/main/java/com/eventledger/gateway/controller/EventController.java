@@ -3,6 +3,7 @@ package com.eventledger.gateway.controller;
 import com.eventledger.dto.ErrorResponse;
 import com.eventledger.dto.EventRequest;
 import com.eventledger.dto.EventResponse;
+import com.eventledger.gateway.config.GatewayHealthIndicator;
 import com.eventledger.gateway.service.AccountServiceClient;
 import com.eventledger.gateway.service.EventService;
 import io.micrometer.core.instrument.Counter;
@@ -11,6 +12,7 @@ import io.micrometer.core.instrument.Timer;
 import jakarta.validation.Valid;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.boot.actuate.health.Health;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -27,12 +29,15 @@ public class EventController {
     private static final Logger log = LoggerFactory.getLogger(EventController.class);
 
     private final EventService eventService;
+    private final GatewayHealthIndicator healthIndicator;
     private final Counter eventsSubmittedCounter;
     private final Counter eventsDuplicateCounter;
     private final Timer eventProcessingTimer;
 
-    public EventController(EventService eventService, MeterRegistry meterRegistry) {
+    public EventController(EventService eventService, MeterRegistry meterRegistry,
+                           GatewayHealthIndicator healthIndicator) {
         this.eventService = eventService;
+        this.healthIndicator = healthIndicator;
         this.eventsSubmittedCounter = Counter.builder("events.submitted.total")
                 .description("Total number of events submitted")
                 .register(meterRegistry);
@@ -92,10 +97,14 @@ public class EventController {
 
     @GetMapping("/health")
     public ResponseEntity<?> health() {
-        Map<String, String> health = new HashMap<>();
-        health.put("status", "UP");
+        Health accountServiceHealth = healthIndicator.health();
+        Map<String, Object> health = new HashMap<>();
+        health.put("status", accountServiceHealth.getStatus().getCode());
         health.put("database", "UP");
-        health.put("accountService", "UNKNOWN");
+        health.put("accountService", accountServiceHealth.getStatus().getCode());
+        if (accountServiceHealth.getDetails() != null) {
+            health.put("accountServiceDetails", accountServiceHealth.getDetails());
+        }
         return ResponseEntity.ok(health);
     }
 
@@ -107,5 +116,12 @@ public class EventController {
         ErrorResponse error = new ErrorResponse(400, "Validation Failed", "Invalid request fields");
         error.setDetails(details);
         return ResponseEntity.badRequest().body(error);
+    }
+
+    @ExceptionHandler(Exception.class)
+    public ResponseEntity<ErrorResponse> handleUnexpected(Exception ex) {
+        log.error("Unexpected error: {}", ex.getMessage(), ex);
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(new ErrorResponse(500, "Internal Server Error", "An unexpected error occurred"));
     }
 }

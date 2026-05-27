@@ -2,10 +2,13 @@ package com.eventledger.gateway.integration;
 
 import com.eventledger.dto.AccountResponse;
 import com.eventledger.dto.EventRequest;
+import com.eventledger.gateway.config.GatewayHealthIndicator;
 import com.eventledger.gateway.service.AccountServiceClient;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.actuate.health.Health;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
@@ -27,6 +30,12 @@ class GatewayIntegrationTest {
     @Autowired private MockMvc mockMvc;
     @Autowired private ObjectMapper objectMapper;
     @MockitoBean private AccountServiceClient accountServiceClient;
+    @MockitoBean private GatewayHealthIndicator healthIndicator;
+
+    @BeforeEach
+    void setUp() {
+        when(healthIndicator.health()).thenReturn(Health.up().build());
+    }
 
     @Test
     void shouldReturnHealthUp() throws Exception {

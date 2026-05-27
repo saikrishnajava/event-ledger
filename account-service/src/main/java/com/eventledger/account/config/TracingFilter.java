@@ -16,6 +16,7 @@ public class TracingFilter implements Filter {
     private static final String TRACEPARENT_HEADER = "traceparent";
     private static final String TRACE_ID_KEY = "traceId";
     private static final String SPAN_ID_KEY = "spanId";
+    private static final String PARENT_SPAN_ID_KEY = "parentSpanId";
 
     @Override
     public void doFilter(ServletRequest request, ServletResponse response, FilterChain chain)
@@ -30,7 +31,9 @@ public class TracingFilter implements Filter {
         if (traceparent != null && traceparent.matches("^00-[0-9a-f]{32}-[0-9a-f]{16}-01$")) {
             String[] parts = traceparent.split("-");
             traceId = parts[1];
-            spanId = parts[2];
+            String parentSpanId = parts[2];
+            spanId = generateId(16);
+            MDC.put(PARENT_SPAN_ID_KEY, parentSpanId);
         } else {
             traceId = generateId(32);
             spanId = generateId(16);
@@ -44,6 +47,7 @@ public class TracingFilter implements Filter {
         } finally {
             MDC.remove(TRACE_ID_KEY);
             MDC.remove(SPAN_ID_KEY);
+            MDC.remove(PARENT_SPAN_ID_KEY);
         }
     }
 

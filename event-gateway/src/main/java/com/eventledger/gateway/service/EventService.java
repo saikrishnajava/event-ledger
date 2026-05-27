@@ -17,6 +17,7 @@ import java.util.stream.Collectors;
 public class EventService {
 
     private static final Logger log = LoggerFactory.getLogger(EventService.class);
+    private static final String EVENT_ID_IDX = "IDX_EVENT_EVENT_ID";
 
     private final EventRepository eventRepository;
     private final AccountServiceClient accountServiceClient;
@@ -26,7 +27,6 @@ public class EventService {
         this.accountServiceClient = accountServiceClient;
     }
 
-    @Transactional
     public EventResponse processEvent(EventRequest request) {
         log.info("Processing event: eventId={}, accountId={}, type={}, amount={}",
                 request.getEventId(), request.getAccountId(), request.getType(), request.getAmount());
@@ -47,12 +47,8 @@ public class EventService {
         event.setMetadata(request.getMetadata());
         event.setStatus(EventStatus.ACCEPTED);
 
-        try {
-            event = eventRepository.saveAndFlush(event);
-        } catch (DataIntegrityViolationException e) {
-            log.info("Race condition on duplicate eventId={}, returning existing", request.getEventId());
-            return toEventResponse(eventRepository.findByEventId(request.getEventId()).orElseThrow());
-        }
+        // Save with ACCEPTED status in its own transaction, no HTTP call inside
+        event = persistEvent(event);
 
         try {
             TransactionRequest txnRequest = new TransactionRequest();
@@ -63,10 +59,11 @@ public class EventService {
             txnRequest.setCurrency(request.getCurrency());
             txnRequest.setEventTimestamp(request.getEventTimestamp());
 
+            // HTTP call outside transaction
             accountServiceClient.applyTransaction(txnRequest);
 
+            updateEventStatus(event.getId(), EventStatus.APPLIED);
             event.setStatus(EventStatus.APPLIED);
-            event = eventRepository.save(event);
             log.info("Event applied successfully: eventId={}", request.getEventId());
         } catch (AccountServiceClient.AccountServiceUnavailableException e) {
             log.error("Account Service unavailable for eventId={}", request.getEventId());
@@ -74,12 +71,34 @@ public class EventService {
         } catch (Exception e) {
             log.error("Failed to apply event to Account Service: eventId={}, error={}",
                     request.getEventId(), e.getMessage());
+            updateEventStatus(event.getId(), EventStatus.REJECTED);
             event.setStatus(EventStatus.REJECTED);
-            eventRepository.save(event);
             throw e;
         }
 
         return toEventResponse(event);
+    }
+
+    @Transactional
+    protected EventEntity persistEvent(EventEntity event) {
+        try {
+            return eventRepository.saveAndFlush(event);
+        } catch (DataIntegrityViolationException e) {
+            if (e.getMessage() != null && e.getMessage().toUpperCase().contains(EVENT_ID_IDX)) {
+                log.info("Race condition on duplicate eventId={}, returning existing", event.getEventId());
+                return eventRepository.findByEventId(event.getEventId()).orElseThrow();
+            }
+            log.error("Unexpected constraint violation for eventId={}: {}", event.getEventId(), e.getMessage());
+            throw e;
+        }
+    }
+
+    @Transactional
+    protected void updateEventStatus(Long eventId, EventStatus status) {
+        eventRepository.findById(eventId).ifPresent(e -> {
+            e.setStatus(status);
+            eventRepository.save(e);
+        });
     }
 
     public EventResponse getEvent(String eventId) {

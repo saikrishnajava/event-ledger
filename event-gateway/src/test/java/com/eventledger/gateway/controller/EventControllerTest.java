@@ -2,6 +2,7 @@ package com.eventledger.gateway.controller;
 
 import com.eventledger.dto.EventRequest;
 import com.eventledger.dto.EventResponse;
+import com.eventledger.gateway.config.GatewayHealthIndicator;
 import com.eventledger.gateway.service.AccountServiceClient;
 import com.eventledger.gateway.service.EventService;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -10,6 +11,7 @@ import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.boot.actuate.health.Health;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
@@ -17,6 +19,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.Collections;
 
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
@@ -28,11 +31,13 @@ class EventControllerTest {
     private final ObjectMapper objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
     private final EventService eventService = mock(EventService.class);
     private final MeterRegistry meterRegistry = new SimpleMeterRegistry();
+    private final GatewayHealthIndicator healthIndicator = mock(GatewayHealthIndicator.class);
 
     @BeforeEach
     void setUp() {
+        when(healthIndicator.health()).thenReturn(Health.up().build());
         mockMvc = MockMvcBuilders
-                .standaloneSetup(new EventController(eventService, meterRegistry))
+                .standaloneSetup(new EventController(eventService, meterRegistry, healthIndicator))
                 .build();
     }
 
@@ -76,7 +81,7 @@ class EventControllerTest {
 
     @Test
     void shouldHandleAccountServiceUnavailable() throws Exception {
-        when(eventService.processEvent(org.mockito.ArgumentMatchers.any()))
+        when(eventService.processEvent(any()))
                 .thenThrow(new AccountServiceClient.AccountServiceUnavailableException("unavailable", new RuntimeException("test")));
 
         EventRequest req = new EventRequest();
@@ -99,7 +104,7 @@ class EventControllerTest {
         EventResponse resp = new EventResponse();
         resp.setEventId("evt-001");
         resp.setStatus("APPLIED");
-        when(eventService.processEvent(org.mockito.ArgumentMatchers.any())).thenReturn(resp);
+        when(eventService.processEvent(any())).thenReturn(resp);
 
         EventRequest req = new EventRequest();
         req.setEventId("evt-001");

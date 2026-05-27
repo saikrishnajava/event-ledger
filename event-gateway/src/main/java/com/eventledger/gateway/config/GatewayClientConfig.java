@@ -33,6 +33,7 @@ public class GatewayClientConfig {
                 spanId = UUID.randomUUID().toString().replace("-", "").substring(0, 16);
             }
 
+            // Propagate traceId and current spanId (becomes parent for Account Service)
             String traceparent = String.format("00-%s-%s-01", traceId, spanId);
             request.getHeaders().add("traceparent", traceparent);
             return execution.execute(request, body);
