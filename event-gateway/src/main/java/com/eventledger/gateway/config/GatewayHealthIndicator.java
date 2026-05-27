@@ -1,6 +1,7 @@
 package com.eventledger.gateway.config;
 
-import org.springframework.beans.factory.annotation.Value;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.boot.actuate.health.Health;
 import org.springframework.boot.actuate.health.HealthIndicator;
 import org.springframework.stereotype.Component;
@@ -9,6 +10,7 @@ import org.springframework.web.client.RestClient;
 @Component
 public class GatewayHealthIndicator implements HealthIndicator {
 
+    private static final Logger log = LoggerFactory.getLogger(GatewayHealthIndicator.class);
     private final RestClient restClient;
 
     public GatewayHealthIndicator(RestClient accountServiceRestClient) {
@@ -18,17 +20,18 @@ public class GatewayHealthIndicator implements HealthIndicator {
     @Override
     public Health health() {
         try {
-            String response = restClient.get()
+            restClient.get()
                     .uri("/health")
                     .retrieve()
-                    .body(String.class);
+                    .toBodilessEntity();
             return Health.up()
                     .withDetail("accountService", "UP")
                     .build();
         } catch (Exception e) {
+            log.warn("Account Service health check failed", e);
             return Health.down()
                     .withDetail("accountService", "DOWN")
-                    .withDetail("error", e.getMessage())
+                    .withDetail("error", "Account Service unreachable")
                     .build();
         }
     }
