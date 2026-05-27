@@ -10,7 +10,7 @@
         <version>1.0.0</version>
     </parent>
 
-    <artifactId>common-dto</artifactId>
+    <artifactId>event-ledger-common</artifactId>
     <name>Common DTO</name>
     <description>Shared DTOs between Event Gateway and Account Service</description>
 

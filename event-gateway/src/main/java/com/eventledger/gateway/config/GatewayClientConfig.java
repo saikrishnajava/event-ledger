@@ -10,7 +10,7 @@ import org.springframework.web.client.RestClient;
 import java.util.UUID;
 
 @Configuration
-public class AppConfig {
+public class GatewayClientConfig {
 
     @Value("${account-service.url}")
     private String accountServiceUrl;

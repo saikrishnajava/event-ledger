@@ -1,4 +1,4 @@
-package com.eventledger.gateway;
+package com.eventledger.gateway.integration;
 
 import com.eventledger.dto.AccountResponse;
 import com.eventledger.dto.EventRequest;

@@ -1,4 +1,4 @@
-package com.eventledger.account;
+package com.eventledger.account.integration;
 
 import com.eventledger.dto.EventRequest;
 import com.eventledger.dto.TransactionRequest;

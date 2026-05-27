@@ -19,7 +19,7 @@
     <description>Financial transaction event processing system</description>
 
     <modules>
-        <module>common-dto</module>
+        <module>event-ledger-common</module>
         <module>event-gateway</module>
         <module>account-service</module>
     </modules>
@@ -35,7 +35,7 @@
         <dependencies>
             <dependency>
                 <groupId>com.eventledger</groupId>
-                <artifactId>common-dto</artifactId>
+                <artifactId>event-ledger-common</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
