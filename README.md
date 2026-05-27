@@ -33,12 +33,13 @@ mvn clean package -DskipTests
 ## Run with Docker Compose
 
 ```bash
-docker-compose up --build
+sudo docker compose up --build
 ```
 
 Services will be available at:
 - Event Gateway: http://localhost:8080
 - Account Service: http://localhost:8081
+- Jaeger UI: http://localhost:16686
 
 ## Run Locally (without Docker)
 
