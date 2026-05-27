@@ -1,0 +1,290 @@
+{
+  "info": {
+    "name": "Event Ledger",
+    "description": "Financial transaction event processing system — two microservices (Event Gateway :8080, Account Service :8081) with idempotency, out-of-order tolerance, circuit breaker, retry, rate limiting, async fallback, and distributed tracing.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "gateway",
+      "value": "http://localhost:8080"
+    },
+    {
+      "key": "account",
+      "value": "http://localhost:8081"
+    }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "Gateway Health",
+          "request": {
+            "method": "GET",
+            "url": "{{gateway}}/health"
+          }
+        },
+        {
+          "name": "Account Service Health",
+          "request": {
+            "method": "GET",
+            "url": "{{account}}/health"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Events",
+      "item": [
+        {
+          "name": "Submit CREDIT Event",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{gateway}}/events",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"eventId\": \"evt-001\",\n  \"accountId\": \"acct-123\",\n  \"type\": \"CREDIT\",\n  \"amount\": 150.00,\n  \"currency\": \"USD\",\n  \"eventTimestamp\": \"2026-05-15T14:02:11Z\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Submit DEBIT Event",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{gateway}}/events",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"eventId\": \"evt-002\",\n  \"accountId\": \"acct-123\",\n  \"type\": \"DEBIT\",\n  \"amount\": 50.00,\n  \"currency\": \"USD\",\n  \"eventTimestamp\": \"2026-05-15T15:00:00Z\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Duplicate Event (Idempotency Test)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{gateway}}/events",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"eventId\": \"evt-001\",\n  \"accountId\": \"acct-123\",\n  \"type\": \"CREDIT\",\n  \"amount\": 150.00,\n  \"currency\": \"USD\",\n  \"eventTimestamp\": \"2026-05-15T14:02:11Z\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Submit Event with Metadata",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{gateway}}/events",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"eventId\": \"evt-003\",\n  \"accountId\": \"acct-456\",\n  \"type\": \"CREDIT\",\n  \"amount\": 250.00,\n  \"currency\": \"USD\",\n  \"eventTimestamp\": \"2026-05-15T16:30:00Z\",\n  \"metadata\": {\n    \"source\": \"mobile-app\",\n    \"batchId\": \"B-12345\"\n  }\n}"
+            }
+          }
+        },
+        {
+          "name": "Get Event by ID",
+          "request": {
+            "method": "GET",
+            "url": "{{gateway}}/events/evt-001"
+          }
+        },
+        {
+          "name": "List Events for Account",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{gateway}}/events?account=acct-123",
+              "host": ["{{gateway}}"],
+              "path": ["events"],
+              "query": [
+                {
+                  "key": "account",
+                  "value": "acct-123"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Submit Invalid Event (Negative Amount)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{gateway}}/events",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"eventId\": \"bad-001\",\n  \"accountId\": \"acct-123\",\n  \"type\": \"CREDIT\",\n  \"amount\": -50,\n  \"currency\": \"USD\",\n  \"eventTimestamp\": \"2026-05-15T14:02:11Z\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Submit Invalid Event (Missing Fields)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{gateway}}/events",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"eventId\": \"bad-002\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Submit Invalid Event (Bad Currency)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{gateway}}/events",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"eventId\": \"bad-003\",\n  \"accountId\": \"acct-123\",\n  \"type\": \"CREDIT\",\n  \"amount\": 100,\n  \"currency\": \"usd\",\n  \"eventTimestamp\": \"2026-05-15T14:02:11Z\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Stress Test (Rate Limiting)",
+          "description": "Run this request multiple times rapidly (via Postman Runner) to trigger Rate Limiter (429 Too Many Requests at >100 req/s)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{gateway}}/events",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"eventId\": \"stress-{{$randomInt}}\",\n  \"accountId\": \"acct-123\",\n  \"type\": \"CREDIT\",\n  \"amount\": 10.00,\n  \"currency\": \"USD\",\n  \"eventTimestamp\": \"2026-05-15T12:00:00Z\"\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Accounts",
+      "item": [
+        {
+          "name": "Get Account Balance",
+          "request": {
+            "method": "GET",
+            "url": "{{account}}/accounts/acct-123/balance"
+          }
+        },
+        {
+          "name": "Get Account Details",
+          "request": {
+            "method": "GET",
+            "url": "{{account}}/accounts/acct-123"
+          }
+        },
+        {
+          "name": "Get Non-existent Account",
+          "request": {
+            "method": "GET",
+            "url": "{{account}}/accounts/nonexistent/balance"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Observability",
+      "item": [
+        {
+          "name": "Gateway Metrics",
+          "request": {
+            "method": "GET",
+            "url": "{{gateway}}/actuator/metrics"
+          }
+        },
+        {
+          "name": "Gateway Prometheus",
+          "request": {
+            "method": "GET",
+            "url": "{{gateway}}/actuator/prometheus"
+          }
+        },
+        {
+          "name": "Gateway Actuator Health",
+          "request": {
+            "method": "GET",
+            "url": "{{gateway}}/actuator/health"
+          }
+        },
+        {
+          "name": "Account Service Metrics",
+          "request": {
+            "method": "GET",
+            "url": "{{account}}/actuator/metrics"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Distributed Tracing",
+      "item": [
+        {
+          "name": "Submit Event with Traceparent",
+          "description": "Sends a W3C traceparent header to verify trace propagation across both services. Check JSON logs for matching traceId.",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "traceparent",
+                "value": "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
+              }
+            ],
+            "url": "{{gateway}}/events",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"eventId\": \"trace-{{$guid}}\",\n  \"accountId\": \"acct-123\",\n  \"type\": \"CREDIT\",\n  \"amount\": 25.00,\n  \"currency\": \"USD\",\n  \"eventTimestamp\": \"2026-05-15T12:00:00Z\"\n}"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
