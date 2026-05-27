@@ -64,12 +64,4 @@ public class AccountController {
                     .body(new ErrorResponse(404, "Not Found", e.getMessage()));
         }
     }
-
-    @GetMapping("/health")
-    public ResponseEntity<?> health() {
-        return ResponseEntity.ok(java.util.Map.of(
-                "status", "UP",
-                "database", "UP"
-        ));
-    }
 }
