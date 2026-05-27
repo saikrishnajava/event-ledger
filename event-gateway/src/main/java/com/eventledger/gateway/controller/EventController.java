@@ -1,0 +1,111 @@
+package com.eventledger.gateway.controller;
+
+import com.eventledger.dto.ErrorResponse;
+import com.eventledger.dto.EventRequest;
+import com.eventledger.dto.EventResponse;
+import com.eventledger.gateway.service.AccountServiceClient;
+import com.eventledger.gateway.service.EventService;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
+import jakarta.validation.Valid;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.TimeUnit;
+
+@RestController
+public class EventController {
+
+    private static final Logger log = LoggerFactory.getLogger(EventController.class);
+
+    private final EventService eventService;
+    private final Counter eventsSubmittedCounter;
+    private final Counter eventsDuplicateCounter;
+    private final Timer eventProcessingTimer;
+
+    public EventController(EventService eventService, MeterRegistry meterRegistry) {
+        this.eventService = eventService;
+        this.eventsSubmittedCounter = Counter.builder("events.submitted.total")
+                .description("Total number of events submitted")
+                .register(meterRegistry);
+        this.eventsDuplicateCounter = Counter.builder("events.duplicate.total")
+                .description("Total number of duplicate event submissions")
+                .register(meterRegistry);
+        this.eventProcessingTimer = Timer.builder("events.processing.time")
+                .description("Event processing time")
+                .register(meterRegistry);
+    }
+
+    @PostMapping("/events")
+    public ResponseEntity<?> submitEvent(@Valid @RequestBody EventRequest request) {
+        long start = System.nanoTime();
+        log.info("Received event submission: eventId={}", request.getEventId());
+
+        try {
+            EventResponse response = eventService.processEvent(request);
+
+            if ("APPLIED".equals(response.getStatus())) {
+                eventsSubmittedCounter.increment();
+            }
+            eventProcessingTimer.record(System.nanoTime() - start, TimeUnit.NANOSECONDS);
+
+            if ("ACCEPTED".equals(response.getStatus()) || "APPLIED".equals(response.getStatus())) {
+                return ResponseEntity.status(HttpStatus.CREATED).body(response);
+            }
+            return ResponseEntity.ok(response);
+
+        } catch (AccountServiceClient.AccountServiceUnavailableException e) {
+            log.error("Account Service unavailable: eventId={}", request.getEventId());
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                    .body(new ErrorResponse(503, "Service Unavailable", e.getMessage()));
+        } catch (AccountServiceClient.AccountServiceException e) {
+            log.error("Account Service error: eventId={}", request.getEventId());
+            return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
+                    .body(new ErrorResponse(502, "Bad Gateway", e.getMessage()));
+        }
+    }
+
+    @GetMapping("/events/{id}")
+    public ResponseEntity<?> getEvent(@PathVariable String id) {
+        try {
+            EventResponse response = eventService.getEvent(id);
+            return ResponseEntity.ok(response);
+        } catch (EventService.EventNotFoundException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(new ErrorResponse(404, "Not Found", e.getMessage()));
+        }
+    }
+
+    @GetMapping("/events")
+    public ResponseEntity<?> listEvents(@RequestParam("account") String accountId) {
+        List<EventResponse> events = eventService.getEventsByAccount(accountId);
+        return ResponseEntity.ok(events);
+    }
+
+    @GetMapping("/health")
+    public ResponseEntity<?> health() {
+        Map<String, String> health = new HashMap<>();
+        health.put("status", "UP");
+        health.put("database", "UP");
+        health.put("accountService", "UNKNOWN");
+        return ResponseEntity.ok(health);
+    }
+
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    public ResponseEntity<ErrorResponse> handleValidation(MethodArgumentNotValidException ex) {
+        Map<String, String> details = new HashMap<>();
+        ex.getBindingResult().getFieldErrors().forEach(error ->
+                details.put(error.getField(), error.getDefaultMessage()));
+        ErrorResponse error = new ErrorResponse(400, "Validation Failed", "Invalid request fields");
+        error.setDetails(details);
+        return ResponseEntity.badRequest().body(error);
+    }
+}
