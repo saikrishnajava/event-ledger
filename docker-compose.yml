@@ -1,0 +1,40 @@
+version: "3.9"
+
+services:
+  account-service:
+    build: ./account-service
+    ports:
+      - "8081:8081"
+    environment:
+      - SPRING_DATASOURCE_URL=jdbc:h2:mem:account_db;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    networks:
+      - event-ledger-net
+
+  event-gateway:
+    build: ./event-gateway
+    ports:
+      - "8080:8080"
+    environment:
+      - ACCOUNT_SERVICE_URL=http://account-service:8081
+      - SPRING_DATASOURCE_URL=jdbc:h2:mem:gateway_db;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+    depends_on:
+      account-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    networks:
+      - event-ledger-net
+
+networks:
+  event-ledger-net:
+    driver: bridge
