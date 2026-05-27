@@ -128,11 +128,23 @@ mvn verify
 
 ## Resiliency — Circuit Breaker
 
-The Gateway uses Resilience4j Circuit Breaker on calls to the Account Service:
+The Gateway uses Resilience4j with a layered defense strategy:
+
+**Retry (outer layer):**
+- **Max Attempts:** 3
+- **Backoff:** Exponential (100ms → 200ms → 400ms)
+- **Jitter:** ±25% randomized wait
+- **Retry on:** `ResourceAccessException`, `HttpServerErrorException` (transient/server errors only)
+
+**Circuit Breaker (inner layer):**
 - **Sliding Window:** COUNT_BASED, 10 calls
 - **Failure Threshold:** 50%
 - **Open State Duration:** 20 seconds
 - **Half-Open Probes:** 3 calls
+
+**Rate Limiting:**
+- **Limit:** 100 requests/second on `POST /events`
+- Returns `429 Too Many Requests` when exceeded
 
 When the circuit is open, `POST /events` returns `503 Service Unavailable`.
 Read endpoints (`GET /events/...`) continue to work independently.
@@ -143,6 +155,7 @@ Read endpoints (`GET /events/...`) continue to work independently.
 - **Distributed Tracing:** W3C `traceparent` header propagated across services
 - **Metrics:** Micrometer counters and timers exposed via `/actuator/metrics`
   - `events.submitted.total`, `events.duplicate.total`, `events.processing.time`
+- **Prometheus:** Metrics exported in Prometheus format at `/actuator/prometheus`
 
 ## Tech Stack
 
@@ -150,6 +163,7 @@ Read endpoints (`GET /events/...`) continue to work independently.
 - Spring Boot 3.5.14
 - Maven (multi-module)
 - H2 Embedded Database
-- Resilience4j Circuit Breaker
-- Micrometer + Spring Boot Actuator
+- Resilience4j (Circuit Breaker, Retry, Rate Limiter)
+- Micrometer + Prometheus + Spring Boot Actuator
 - Logstash Logback Encoder
+- W3C Trace Context Propagation

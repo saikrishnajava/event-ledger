@@ -3,6 +3,7 @@ package com.eventledger.gateway.service;
 import com.eventledger.dto.AccountResponse;
 import com.eventledger.dto.TransactionRequest;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
+import io.github.resilience4j.retry.annotation.Retry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatusCode;
@@ -21,6 +22,7 @@ public class AccountServiceClient {
         this.restClient = accountServiceRestClient;
     }
 
+    @Retry(name = CIRCUIT_BREAKER_NAME)
     @CircuitBreaker(name = CIRCUIT_BREAKER_NAME, fallbackMethod = "applyTransactionFallback")
     public AccountResponse applyTransaction(TransactionRequest request) {
         log.info("Calling Account Service: accountId={}, eventId={}", request.getAccountId(), request.getEventId());

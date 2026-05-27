@@ -6,6 +6,8 @@ import com.eventledger.dto.EventResponse;
 import com.eventledger.gateway.config.GatewayHealthIndicator;
 import com.eventledger.gateway.service.AccountServiceClient;
 import com.eventledger.gateway.service.EventService;
+import io.github.resilience4j.ratelimiter.RequestNotPermitted;
+import io.github.resilience4j.ratelimiter.annotation.RateLimiter;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
@@ -50,6 +52,7 @@ public class EventController {
     }
 
     @PostMapping("/events")
+    @RateLimiter(name = "eventSubmission")
     public ResponseEntity<?> submitEvent(@Valid @RequestBody EventRequest request) {
         long start = System.nanoTime();
         log.info("Received event submission: eventId={}", request.getEventId());
@@ -116,6 +119,13 @@ public class EventController {
         ErrorResponse error = new ErrorResponse(400, "Validation Failed", "Invalid request fields");
         error.setDetails(details);
         return ResponseEntity.badRequest().body(error);
+    }
+
+    @ExceptionHandler(RequestNotPermitted.class)
+    public ResponseEntity<ErrorResponse> handleRateLimit(RequestNotPermitted ex) {
+        log.warn("Rate limit exceeded");
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                .body(new ErrorResponse(429, "Too Many Requests", "Rate limit exceeded. Try again later."));
     }
 
     @ExceptionHandler(Exception.class)
