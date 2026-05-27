@@ -10,6 +10,8 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.sql.SQLIntegrityConstraintViolationException;
+
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -17,7 +19,16 @@ import java.util.stream.Collectors;
 public class EventService {
 
     private static final Logger log = LoggerFactory.getLogger(EventService.class);
-    private static final String EVENT_ID_IDX = "IDX_EVENT_EVENT_ID";
+    private boolean isDuplicateKeyViolation(DataIntegrityViolationException e) {
+        Throwable cause = e.getCause();
+        while (cause != null) {
+            if (cause instanceof SQLIntegrityConstraintViolationException) {
+                return true;
+            }
+            cause = cause.getCause();
+        }
+        return false;
+    }
 
     private final EventRepository eventRepository;
     private final AccountServiceClient accountServiceClient;
@@ -65,8 +76,9 @@ public class EventService {
             updateEventStatus(event.getId(), EventStatus.APPLIED);
             event.setStatus(EventStatus.APPLIED);
             log.info("Event applied successfully: eventId={}", request.getEventId());
-        } catch (AccountServiceClient.AccountServiceUnavailableException e) {
-            log.warn("Account Service unavailable, queuing event as PENDING: eventId={}", request.getEventId());
+        } catch (AccountServiceClient.AccountServiceUnavailableException
+                 | AccountServiceClient.AccountServiceException e) {
+            log.warn("Account Service error, queuing event as PENDING: eventId={}", request.getEventId());
             updateEventStatus(event.getId(), EventStatus.PENDING);
             event.setStatus(EventStatus.PENDING);
         } catch (Exception e) {
@@ -85,7 +97,7 @@ public class EventService {
         try {
             return eventRepository.saveAndFlush(event);
         } catch (DataIntegrityViolationException e) {
-            if (e.getMessage() != null && e.getMessage().toUpperCase().contains(EVENT_ID_IDX)) {
+            if (isDuplicateKeyViolation(e)) {
                 log.info("Race condition on duplicate eventId={}, returning existing", event.getEventId());
                 return eventRepository.findByEventId(event.getEventId()).orElseThrow();
             }
@@ -119,7 +131,6 @@ public class EventService {
         return eventRepository.findByStatusOrderByReceivedAtAsc(EventStatus.PENDING);
     }
 
-    @Transactional
     public void replayEvent(Long eventId) {
         eventRepository.findById(eventId).ifPresent(event -> {
             TransactionRequest txnRequest = new TransactionRequest();
@@ -130,8 +141,7 @@ public class EventService {
             txnRequest.setCurrency(event.getCurrency());
             txnRequest.setEventTimestamp(event.getEventTimestamp());
             accountServiceClient.applyTransaction(txnRequest);
-            event.setStatus(EventStatus.APPLIED);
-            eventRepository.save(event);
+            updateEventStatus(event.getId(), EventStatus.APPLIED);
             log.info("Replayed pending event: eventId={}", event.getEventId());
         });
     }

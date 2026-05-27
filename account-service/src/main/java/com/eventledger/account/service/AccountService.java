@@ -13,6 +13,8 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.sql.SQLIntegrityConstraintViolationException;
+
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -20,7 +22,16 @@ import java.util.stream.Collectors;
 public class AccountService {
 
     private static final Logger log = LoggerFactory.getLogger(AccountService.class);
-    private static final String TXN_EVENT_ID_IDX = "IDX_TXN_EVENT_ID";
+    private boolean isDuplicateKeyViolation(DataIntegrityViolationException e) {
+        Throwable cause = e.getCause();
+        while (cause != null) {
+            if (cause instanceof SQLIntegrityConstraintViolationException) {
+                return true;
+            }
+            cause = cause.getCause();
+        }
+        return false;
+    }
     private static final int MAX_RETRIES = 3;
 
     private final AccountRepository accountRepository;
@@ -40,7 +51,9 @@ public class AccountService {
                     log.error("Optimistic lock retry exhausted for accountId={}", request.getAccountId());
                     throw new AccountConflictException("Account updated concurrently, please retry", e);
                 }
-                log.warn("Optimistic lock conflict, retrying (attempt {}/{})", attempt + 1, MAX_RETRIES);
+                long backoff = (long) (Math.random() * 50 + 10);
+                log.warn("Optimistic lock conflict, retrying in {}ms (attempt {}/{})", backoff, attempt + 1, MAX_RETRIES);
+                try { Thread.sleep(backoff); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); break; }
             }
         }
         throw new AccountConflictException("Account updated concurrently, please retry");
@@ -80,7 +93,7 @@ public class AccountService {
         try {
             transactionRepository.saveAndFlush(txn);
         } catch (DataIntegrityViolationException e) {
-            if (e.getMessage() != null && e.getMessage().toUpperCase().contains(TXN_EVENT_ID_IDX)) {
+            if (isDuplicateKeyViolation(e)) {
                 log.warn("Race condition on duplicate eventId={}, returning existing state", request.getEventId());
                 return buildAccountResponse(request.getAccountId());
             }

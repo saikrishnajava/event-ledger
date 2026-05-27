@@ -65,6 +65,10 @@ public class EventController {
             }
             eventProcessingTimer.record(System.nanoTime() - start, TimeUnit.NANOSECONDS);
 
+            if ("REJECTED".equals(response.getStatus())) {
+                return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(response);
+            }
+            eventsSubmittedCounter.increment();
             if ("PENDING".equals(response.getStatus())) {
                 return ResponseEntity.status(HttpStatus.ACCEPTED).body(response);
             }

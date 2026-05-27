@@ -1,6 +1,7 @@
 package com.eventledger.dto;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.validation.constraints.*;
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -22,6 +23,7 @@ public class EventRequest {
     private BigDecimal amount;
 
     @NotBlank(message = "currency is required")
+    @Pattern(regexp = "^[A-Z]{3}$", message = "currency must be a valid ISO 4217 code (e.g. USD)")
     private String currency;
 
     @NotNull(message = "eventTimestamp is required")
