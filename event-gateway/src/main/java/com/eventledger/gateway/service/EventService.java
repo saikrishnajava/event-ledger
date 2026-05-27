@@ -66,8 +66,9 @@ public class EventService {
             event.setStatus(EventStatus.APPLIED);
             log.info("Event applied successfully: eventId={}", request.getEventId());
         } catch (AccountServiceClient.AccountServiceUnavailableException e) {
-            log.error("Account Service unavailable for eventId={}", request.getEventId());
-            throw e;
+            log.warn("Account Service unavailable, queuing event as PENDING: eventId={}", request.getEventId());
+            updateEventStatus(event.getId(), EventStatus.PENDING);
+            event.setStatus(EventStatus.PENDING);
         } catch (Exception e) {
             log.error("Failed to apply event to Account Service: eventId={}, error={}",
                     request.getEventId(), e.getMessage());
@@ -112,6 +113,27 @@ public class EventService {
                 .stream()
                 .map(this::toEventResponse)
                 .collect(Collectors.toList());
+    }
+
+    public List<EventEntity> findPendingEvents() {
+        return eventRepository.findByStatusOrderByReceivedAtAsc(EventStatus.PENDING);
+    }
+
+    @Transactional
+    public void replayEvent(Long eventId) {
+        eventRepository.findById(eventId).ifPresent(event -> {
+            TransactionRequest txnRequest = new TransactionRequest();
+            txnRequest.setEventId(event.getEventId());
+            txnRequest.setAccountId(event.getAccountId());
+            txnRequest.setType(event.getType());
+            txnRequest.setAmount(event.getAmount());
+            txnRequest.setCurrency(event.getCurrency());
+            txnRequest.setEventTimestamp(event.getEventTimestamp());
+            accountServiceClient.applyTransaction(txnRequest);
+            event.setStatus(EventStatus.APPLIED);
+            eventRepository.save(event);
+            log.info("Replayed pending event: eventId={}", event.getEventId());
+        });
     }
 
     private EventResponse toEventResponse(EventEntity event) {

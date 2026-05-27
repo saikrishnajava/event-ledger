@@ -94,16 +94,16 @@ class GatewayIntegrationTest {
     }
 
     @Test
-    void shouldReturn503WhenAccountServiceThrows() throws Exception {
+    void shouldQueueEventAsPendingWhenAccountServiceUnavailable() throws Exception {
         when(accountServiceClient.applyTransaction(any()))
                 .thenThrow(new AccountServiceClient.AccountServiceUnavailableException("down", new RuntimeException()));
 
-        EventRequest req = buildRequest("itg-503-" + System.currentTimeMillis());
+        EventRequest req = buildRequest("itg-pending-" + System.currentTimeMillis());
         mockMvc.perform(post("/events")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(req)))
-                .andExpect(status().isServiceUnavailable())
-                .andExpect(jsonPath("$.status").value(503));
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.status").value("PENDING"));
     }
 
     private EventRequest buildRequest(String eventId) {

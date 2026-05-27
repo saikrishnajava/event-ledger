@@ -65,6 +65,9 @@ public class EventController {
             }
             eventProcessingTimer.record(System.nanoTime() - start, TimeUnit.NANOSECONDS);
 
+            if ("PENDING".equals(response.getStatus())) {
+                return ResponseEntity.status(HttpStatus.ACCEPTED).body(response);
+            }
             if ("ACCEPTED".equals(response.getStatus()) || "APPLIED".equals(response.getStatus())) {
                 return ResponseEntity.status(HttpStatus.CREATED).body(response);
             }
