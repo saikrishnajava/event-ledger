@@ -1,6 +1,6 @@
 # Event Ledger
 
-A two-microservice system for processing financial transaction events with idempotency, out-of-order tolerance, distributed tracing, and resiliency patterns.
+A two-microservice system for processing financial transaction events with idempotency, out-of-order tolerance, distributed tracing, layered resiliency (rate limiter → retry → circuit breaker → async fallback), and full observability (JSON logging, metrics, Prometheus, Jaeger).
 
 ## Architecture
 
@@ -142,20 +142,32 @@ The Gateway uses Resilience4j with a layered defense strategy:
 - **Open State Duration:** 20 seconds
 - **Half-Open Probes:** 3 calls
 
-**Rate Limiting:**
+**Rate Limiting (outermost layer):**
 - **Limit:** 100 requests/second on `POST /events`
 - Returns `429 Too Many Requests` when exceeded
 
-When the circuit is open, `POST /events` returns `503 Service Unavailable`.
-Read endpoints (`GET /events/...`) continue to work independently.
+**Async Fallback:**
+- When Account Service is unreachable (circuit open), events are queued as `PENDING`
+- Returns `202 Accepted` instead of failing with 503
+- `EventReplayScheduler` retries PENDING events every 30 seconds
+- Each replay is individually caught — one failure doesn't block others
+
+**Optimistic Locking:**
+- `@Version` on `AccountEntity` prevents silent balance corruption under concurrent writes
+- Retry loop with 10-60ms random backoff on `OptimisticLockException`
 
 ## Observability
 
 - **Structured Logging:** JSON-formatted logs via Logstash Logback Encoder with traceId correlation
 - **Distributed Tracing:** W3C `traceparent` header propagated across services
+- **OpenTelemetry + Jaeger:** OTel SDK with OTLP exporter → Jaeger all-in-one for trace visualization (UI at `:16686`)
 - **Metrics:** Micrometer counters and timers exposed via `/actuator/metrics`
   - `events.submitted.total`, `events.duplicate.total`, `events.processing.time`
 - **Prometheus:** Metrics exported in Prometheus format at `/actuator/prometheus`
+
+## Contract Testing
+
+Pact consumer test (`GatewayPactConsumerTest`) verifies the Gateway's expectations of the Account Service API contract.
 
 ## Tech Stack
 
@@ -165,5 +177,8 @@ Read endpoints (`GET /events/...`) continue to work independently.
 - H2 Embedded Database
 - Resilience4j (Circuit Breaker, Retry, Rate Limiter)
 - Micrometer + Prometheus + Spring Boot Actuator
+- OpenTelemetry SDK + OTLP Exporter
+- Jaeger Tracing (all-in-one)
 - Logstash Logback Encoder
 - W3C Trace Context Propagation
+- Pact JVM (Consumer)
